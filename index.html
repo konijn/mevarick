@@ -1,43 +1,480 @@
-<!doctype html>
 <html>
   <head>
-    <meta charset="utf-8">
-    <meta http-equiv="X-UA-Compatible" content="chrome=1">
-    <title>Mevarick by konijn</title>
-
-    <link rel="stylesheet" href="stylesheets/styles.css">
-    <link rel="stylesheet" href="stylesheets/pygment_trac.css">
-    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
-    <!--[if lt IE 9]>
-    <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
-    <![endif]-->
+    <!--  -->
+    <title>Mevarick</title>
+    <style>
+      body {background-color:black; color:white; white-space:pre; font-family:monospace; text-align:center }
+      
+    </style>
   </head>
   <body>
-    <div class="wrapper">
-      <header>
-        <h1>Mevarick</h1>
-        <p>Mevarick</p>
+  <div id="screen"></div>
+</body>
 
-        <p class="view"><a href="https://github.com/konijn/mevarick">View the Project on GitHub <small>konijn/mevarick</small></a></p>
+<script>
+/*********************************************************
+* All sources in Mevarick are Copyright (c) by Konijn    *
+* I Konijn, release all code and data under the terms of *
+* of the GNU General Public License (version 2), as well *
+* as under the traditional Angband license. Distribution *
+* is allowed both under the terms of the GPL (version 2) *
+* or under the terms of the traditional Angband license. *
+*                                                        *
+* Exception: Mersenne Twister code got borrowed from     *
+* https://gist.github.com/300494                         *
+* Disclaimer: you would have to be crazy to re-use this! *
+*********************************************************/
 
+//Global constants
+hack="";
+ 
+//Protype magic                       
+Array.prototype.shuffle = function()
+{
+  var out = [] , tmp = this , idx; 
+  while( tmp.length )
+  {
+    out.push( tmp[idx = floor(tmp.length * random())] );
+    tmp = tmp.slice( 0 , idx ).concat( tmp.slice( idx + 1 ) );                  
+  }
+  return out;  
+}
 
-        <ul>
-          <li><a href="https://github.com/konijn/mevarick/zipball/master">Download <strong>ZIP File</strong></a></li>
-          <li><a href="https://github.com/konijn/mevarick/tarball/master">Download <strong>TAR Ball</strong></a></li>
-          <li><a href="https://github.com/konijn/mevarick">View On <strong>GitHub</strong></a></li>
-        </ul>
-      </header>
-      <section>
-        <h1>mevarick</h1>
+Array.prototype.random = function()
+{
+  return this[ floor(this.length * random() ) ]
+}          
 
-<p>Mevarick</p>
-      </section>
-      <footer>
-        <p>This project is maintained by <a href="https://github.com/konijn">konijn</a></p>
-        <p><small>Hosted on GitHub Pages &mdash; Theme by <a href="https://github.com/orderedlist">orderedlist</a></small></p>
-      </footer>
-    </div>
-    <script src="javascripts/scale.fix.js"></script>
+Array.prototype.each = function(f)
+{
+  for( var i = 0 ; i < this.length ; i++)
+    f(this[i],this);
+}
+
+Object.prototype.merge = function(bag)
+{
+  for(var key in bag)
+    if(bag.hasOwnProperty(key))
+      this[key] = bag[key]
+}    
     
-  </body>
+//Silly magic    
+var a = Object.getOwnPropertyNames(Math);    
+for( var key in a ) this[a[key]] = Math[a[key]]; 
+
+//global secret sauce helpers
+function Args( o )
+{
+  if ( !(this instanceof Args) )
+    return new Args(o);
+  var s = o.callee.toString();
+  var keys = s.slice(s.indexOf('(')+1, s.indexOf(')')).match(/([^\s,]+)/g);
+  for( var i = 0 ; i < keys.length ; i ++ )
+    this[keys[i]] = o[i];
+}
+
+//Mersenne twister
+/*
+  var m = new MersenneTwister(seed);
+  var randomNumber = m.random();
+  Hijacked from https://gist.github.com/300494
+*/
+
+var MersenneTwister = function(seed) {
+  this.M = 397;
+  this.N = this.mti = 624;
+  this.mt = [(seed || new Date().getTime()) >>> 0];
+  console.log("Seed:", this.mt[0] );
+  for (var i=1; i<this.N; i++)
+  {
+    s = this.mt[i-1] ^ (this.mt[i-1] >>> 30);
+    this.mt[i] = ((((((s & 0xffff0000) >>> 16) * 1812433253) << 16) + (s & 0x0000ffff) * 1812433253) + i) >>> 0;
+  }
+}  
+  
+/* generates a random number on [0,0xffffffff]-interval */
+MersenneTwister.prototype.int32 = function() {
+  var LOWER_MASK = 0x7fffffff; // least significant r bits
+  var UPPER_MASK = 0x80000000; // most significant w-r bits
+  var y;
+  var mag01 = new Array(0, 0x9908b0df); // mag01[x] = x * MATRIX_A  for x=0,1
+
+  if (this.mti >= this.N) { /* generate N words at one time */
+    var kk;
+
+    for (kk=0;kk<this.N-this.M;kk++) {
+      y = (this.mt[kk]&this.UPPER_MASK)|(this.mt[kk+1] & LOWER_MASK);
+      this.mt[kk] = this.mt[kk+this.M] ^ (y >>> 1) ^ mag01[y & 1];
+    }
+    for (;kk<this.N-1;kk++) {
+      y = (this.mt[kk]&this.UPPER_MASK)|(this.mt[kk+1] & LOWER_MASK);
+      this.mt[kk] = this.mt[kk+(this.M-this.N)] ^ (y >>> 1) ^ mag01[y & 1];
+    }
+    y = (this.mt[this.N-1]&this.UPPER_MASK)|(this.mt[0] & LOWER_MASK);
+    this.mt[this.N-1] = this.mt[this.M-1] ^ (y >>> 1) ^ mag01[y & 1];
+
+    this.mti = 0;
+  }
+
+/* Tempering */
+  y = this.mt[this.mti++]
+  y ^= (y >>> 11);
+  y ^= (y << 7) & 0x9d2c5680;
+  y ^= (y << 15) & 0xefc60000;
+  return (y ^ (y >>> 18)) >>> 0;
+}
+
+MersenneTwister.prototype.random = function() 
+{
+  return this.int32()*2.3283064365386963e-10;
+}
+    
+var twister = new MersenneTwister(3717022350)    
+random = function()
+{
+  return twister.random()
+} 
+
+//2d map helpers
+map2 = 
+{ dump : function()
+  {
+    hack = "";
+    this.apply( function(c){ if(c.dump)hack = hack + c.dump(c); });
+    console.log( hack );
+  },
+  apply : function( f )
+  {
+    for( var y = 0 ; y < this.map2.y ; y++ )
+      for( var x = 0 ; x < this.map2.x ; x++ )
+        f( this[x][y] , this );
+  },
+  applyArea : function( from , to , f )
+  {
+    for( var y = min( from.y , to.y ) ; y < max( from.y , to.y )+1 ; y++ )
+      for( var x = min( from.x , to.x ) ; x < max( from.x , to.x )+1; x++ )
+        f( this[x][y] , this );      
+  },
+  applyRow : function( y , f )
+  {
+    for( var x = 0 ; x < this.map2.x ; x++ )
+      f( [x][y] , this );
+  },    
+  applyColumn : function( x , f )
+  {
+    for( var y = 0 ; x < this.map2.y ; y++ )
+      f( this[x][y] , this );
+  },        
+  applyBag : function( bag , f )
+  {
+     var cursor = this.cursor || { x : 0 , y : 0 };
+     while( bag.length )
+     {
+       var stuff = bag.shift();
+         cursor.x = (stuff.x === undefined ? cursor.x : stuff.x);
+         cursor.y = (stuff.y === undefined ? cursor.y : stuff.y);         
+       f( this[cursor.x][cursor.y] , stuff , this , bag  );
+     }
+  },    
+  init : function( o, config ,f )
+  {
+    o.map2 = config;
+    for( var x = 0 ; x < o.map2.x ; x++ )
+      if( o[x] = [] ) //I might burn for this :P
+        for( var y = 0 ; y < o.map2.y ; y++ )
+          f( o[x][y] = o[x][y] || this.initCell(x,y,config) , x , y , o );
+      o.merge(map2);
+    return o;  
+  },
+  initFromText : function( text , s1, s2 )
+  {
+    var config = { x : text.split(s1)[0].split(s2).length , y : text.split(s1).length };
+    return map2.init( {} , config , function(cell,x,y)
+    { //Horribly ineffecient, I know
+      cell.value = text.split(s1)[y].split(s2)[x];    
+    });    
+      
+  },
+  initCell : function( x, y , config )
+  {
+    var cell = { x : x , y : y };
+    if( x == config.x - 1 )
+      cell.eol = true;
+    return cell;    
+  },
+  neighbours : function( cell , v/*ectors*/, f/*ilter*/ )
+  {
+    var set = [], maybe;
+    for( var i = 0 ; i < v.length ; i++ )
+      if( this[cell.x+v[i].x] )
+        if( maybe = this[cell.x+v[i].x][cell.y+v[i].y] )
+          if( !f || ( f && f( maybe ) ) )
+            set.push( maybe );
+    return set;    
+  },
+  filter : function( f )
+  {
+    var set= [];
+    for( var y = 0 ; y < this.map2.y ; y++ )
+      for( var x = 0 ; x < this.map2.x ; x++ )
+        if (f( this[x][y] , this ))
+          set.push( this[x][y] );    
+    return set;
+  },
+  allNeighbours: [ {x:0,y:-1},{x:0,y:1},{x:1,y:-1},{x:1,y:1},{x:1,y:0},{x:-1,y:-1},{x:-1,y:1},{x:-1,y:0} ],
+  cardinalNeighbours : [{x:0,y:-1},{x:0,y:1},{x:1,y:0},{x:-1,y:0}]
+}
+ 
+//Dungeon Features    
+features = 
+{
+  Feature : function(bag)
+  {
+    this.merge( bag );
+  },
+  addBase : function(char,color,description)
+  {
+    this[char] = new this.Feature( Args( arguments ) );
+    return this; 
+  },
+  init : function()
+  {
+    this.Feature.prototype.dump = function()
+    {
+      return this.char;
+    }
+    return this;
+  }
+}.init()
+.addBase( " " , "w" , "Void" )
+.addBase( "." , "w" , "Floor" )
+.addBase( "#" , "w" , "Wall" )
+.addBase( ";" , "w" , "Glyph of Warding" )
+.addBase( "'" , "U" , "Open door" )
+.addBase( "+" , "U" , "Closed door" )
+.addBase( ">" , "r" , "Down stairs" )
+.addBase( "<" , "r" , "Up stairs" )
+.addBase( "^" , "r" , "Trap" )
+.addBase( ":" , "w" , "Rubble" )
+.addBase( "%" , "s" , "Vein" )
+.addBase( "`" , "w" , "Portal" )
+.addBase( "1" , "w" , "General store" )
+.addBase( "2" , "w" , "Armory" )
+.addBase( "3" , "w" , "Weapon shop" )
+.addBase( "4" , "w" , "Temple" )
+.addBase( "5" , "w" , "Alchemist" )      
+.addBase( "6" , "w" , "Magic shop" )
+.addBase( "7" , "w" , "Black market" )
+.addBase( "8" , "w" , "Home" )
+.addBase( "9" , "w" , "Book store" )
+      
+console.log( "Features: " , features );
+    
+function Cursor(parent,x,y,color)
+{
+  this.merge( Args( arguments ) );  
+  this.advance = function()
+  {
+    this.x++;
+    if( this.x == this.parent.w )
+    {
+      this.x = 0;
+      this.y++;
+      if( this.y == this.parent.h )
+        this.y = 0;  
+    }
+  }
+}    
+        
+//The screen  
+screen = 
+{
+  h : 25, //h is height
+  w : 80, //w is width
+  cursor  : false, 
+  div : document.getElementById("screen"),
+  initialize : function()
+  {
+    map2.init( this , {  x : this.w , y : this.h } , function(c,x,y,o)
+    { 
+      c.char = 'o' , c.color = 'green' , c.eol = (x==o.map2.x-1) 
+    });
+    this.cursor = new Cursor(this,0,0,false);
+    console.log( "Hello World" );
+    return this;
+  },
+  clear: function()
+  {
+    this.apply( function(c){ c.char = '&nbsp;' } );
+    return this;
+  },
+  print: function( s , color )
+  {
+     var oldColor = this.cursor.color;
+     if(color) 
+       this.cursor.color = color;
+
+     this.applyBag( s.split("") , function( c , entry, o )
+     {
+       c.color = o.cursor.color || c.color;
+       c.char = entry;  
+       o.cursor.advance();
+     });
+     
+     if(color) 
+       this.cursor.color = oldColor;     
+     return this;
+  },
+  write : function()
+  {
+    this.html = '';
+    this.apply( function(c,o)
+    { 
+      o.html = o.html + c.char + (c.eol?"<br>":"") 
+    });
+    //console.log( this.html );
+    this.div.innerHTML = this.html;
+    return this;
+  }
+}.initialize().clear().print("Hello World").write();
+
+
+function Map(config)
+{
+  if ( !(this instanceof Map) )
+      return new Map();
+  this.merge(config);
+}
+
+Map.prototype.dumpCell = function( cell )
+{
+  var eol = cell.eol?"\n":""  
+  if( cell.feature.char )
+    return cell.feature.char+eol;      
+  return "¿"+eol;
+}
+
+
+//http://kuoi.com/~kamikaze/GameDesign/art07_rogue_dungeon.php
+function dungeonGenerator( config )
+{ //Initialize Grid
+  var grid = map2.init( { cells:[] } , { x:config.grid.w , y:config.grid.h } , function(){});
+  //Create the list of neighbours, collect all the cells  
+  grid.apply( function(cell,grid)
+  {
+    cell.neighbours = grid.neighbours( cell , grid.cardinalNeighbours ).shuffle();
+    grid.cells.push(cell);
+  });
+  //Randomize the list of cells
+  grid.cells = grid.cells.shuffle();
+  //Visit the grid
+  grid.cells.each( function(cell)
+  {
+    grid.applyBag( [cell] , function( cell , ignore1 , ignore2 , bag )    
+    {
+      for(var i = 0 ; i < cell.neighbours.length; i++)
+      {
+        var neighbour = cell.neighbours[i];  
+        if( !neighbour.connected )
+        {
+          cell.connected = neighbour.connected = true;
+          cell.connectedTo = ( cell.connectedTo || [] ).concat( neighbour );
+          neighbour.connectedTo = ( neighbour.connectedTo || [] ).concat( cell);
+          console.log( "Connect & Out", cell , neighbour );  
+          bag.push(neighbour);
+          return;
+        }
+      }
+      //Good job, everything is connected
+      cell.perfect = true
+      var possibleStarts = grid.filter( function(cell){ return cell.connected && !cell.perfect } ).shuffle();
+      if( possibleStarts.length )  
+        bag.push( possibleStarts[0] );
+    });
+  });
+  console.log( grid );
+  var map = map2.init( {} , { x:config.map.w , y:config.map.h } , function(c)
+  {
+    c.feature = features["#"];
+    c.dump = Map.prototype.dumpCell;
+  });
+  console.log( map );
+  var xMultiple =  floor((config.map.w-1) / ( config.grid.w ));
+  var yMultiple =  floor((config.map.h-1) / ( config.grid.h ));    
+  console.log( "Multiples" , xMultiple , yMultiple );
+  grid.cells.each( function( cell )
+  {
+      cell.x = ceil((cell.x + 0.5)*xMultiple);
+      cell.y = ceil((cell.y + 0.5)*yMultiple);      
+  });
+  grid.cells.each( function( cell )
+  {
+    cell.connectedTo.each( function( to )
+    {
+      map.applyArea( cell, to , function( cell ){ cell.feature = features["."]; });
+    });
+    dungeonGenerator.rooms.apply( map , cell );
+  });        
+  map.dump();
+
+}
+
+dungeonGenerator.rooms = {
+
+  "9by4"  : [".........",
+             ".........",    
+             "....*....",
+             "........."].join("\n"),
+  "shifted"  : [".........",
+                ".........",    
+                ".........",
+                "........*"].join("\n"),
+  "pyramid"  : ["####.####",
+                "###...###",    
+                "##.....##",
+                "...#*#..."].join("\n"),    
+  "11by3" : ["...........",
+             ".....*.....",
+             "..........."].join("\n"),    
+  "11by3" : ["##.......##",
+             ".#.......#.",    
+             ".....*.....",
+             ".#.......#.",
+             "##.......##"].join("\n"),        
+  "wiggle": ["#.#.#.#.#.#",
+             ".....*.....",
+             "#.#.#.#.#.#"].join("\n"),        
+  parse : function()
+  { 
+    var keys = [];
+    for( var key in this)
+    {
+      if( this.hasOwnProperty(key) && typeof this[key] != "function" )
+      {
+        //console.log( "Parsing: " , key );
+        var o = map2.initFromText( this[key] , "\n" , "");
+        var X = o.filter( function(c){return c.value=="*"} ).shift();
+        X.value = ".";
+        this[key] = o.filter( function(c){ c.dx = c.x - X.x ; c.dy = c.y - X.y ; return true });  
+        keys.push(key);    
+        //console.log(keys,key);                                       
+      }
+    }
+    this.keys = keys;                              
+    return this;
+  },
+  apply : function( map , center )
+  {
+    var room = this[ this.keys.random() ];
+    room.each( function( cell )
+    {
+      map[center.x + cell.dx][center.y + cell.dy].feature = features[ cell.value ]; 
+    });
+  }            
+}.parse();                                      
+console.log( dungeonGenerator.rooms );                                      
+                       
+dungeonGenerator( { grid : { w:8 , h:3 } , map : { w:160 , h:25 } } );
+  
+</script>
 </html>
