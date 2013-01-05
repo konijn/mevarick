@@ -24,8 +24,7 @@
 * is allowed both under the terms of the GPL (version 2) *
 * or under the terms of the traditional Angband license. *
 *                                                        *
-* Exception: Mersenne Twister code got borrowed from     *
-* https://gist.github.com/300494                         *
+* Exception: Alea code got borrowed from rot.js          *
 * Disclaimer: you would have to be crazy to re-use this! *
 *********************************************************/
 
@@ -77,81 +76,90 @@ function Args( o )
     this[keys[i]] = o[i];
 }
 
-//Mersenne twister
-/*
-  var m = new MersenneTwister(seed);
-  var randomNumber = m.random();
-  Hijacked from https://gist.github.com/300494
-*/
-
-var MersenneTwister = function(seed) {
-  this.M = 397;
-  this.N = this.mti = 624;
-  this.mt = [(seed || new Date().getTime()) >>> 0];
-  console.log("Seed:", this.mt[0] );
-  for (var i=1; i<this.N; i++)
-  {
-    s = this.mt[i-1] ^ (this.mt[i-1] >>> 30);
-    this.mt[i] = ((((((s & 0xffff0000) >>> 16) * 1812433253) << 16) + (s & 0x0000ffff) * 1812433253) + i) >>> 0;
-  }
-}  
-  
-/* generates a random number on [0,0xffffffff]-interval */
-MersenneTwister.prototype.int32 = function() {
-  var LOWER_MASK = 0x7fffffff; // least significant r bits
-  var UPPER_MASK = 0x80000000; // most significant w-r bits
-  var y;
-  var mag01 = new Array(0, 0x9908b0df); // mag01[x] = x * MATRIX_A  for x=0,1
-
-  if (this.mti >= this.N) { /* generate N words at one time */
-    var kk;
-
-    for (kk=0;kk<this.N-this.M;kk++) {
-      y = (this.mt[kk]&this.UPPER_MASK)|(this.mt[kk+1] & LOWER_MASK);
-      this.mt[kk] = this.mt[kk+this.M] ^ (y >>> 1) ^ mag01[y & 1];
-    }
-    for (;kk<this.N-1;kk++) {
-      y = (this.mt[kk]&this.UPPER_MASK)|(this.mt[kk+1] & LOWER_MASK);
-      this.mt[kk] = this.mt[kk+(this.M-this.N)] ^ (y >>> 1) ^ mag01[y & 1];
-    }
-    y = (this.mt[this.N-1]&this.UPPER_MASK)|(this.mt[0] & LOWER_MASK);
-    this.mt[this.N-1] = this.mt[this.M-1] ^ (y >>> 1) ^ mag01[y & 1];
-
-    this.mti = 0;
-  }
-
-/* Tempering */
-  y = this.mt[this.mti++]
-  y ^= (y >>> 11);
-  y ^= (y << 7) & 0x9d2c5680;
-  y ^= (y << 15) & 0xefc60000;
-  return (y ^ (y >>> 18)) >>> 0;
-}
-
-MersenneTwister.prototype.random = function() 
+/* Alea
+   random = Alea.seed(123).random; Hijacked from rot.js */
+Alea = 
 {
-  return this.int32()*2.3283064365386963e-10;
-}
-    
-var twister = new MersenneTwister(3717022350)    
-random = function()
-{
-  return twister.random()
-} 
+  _frac: 2.3283064365386963e-10, /* 2^-32 */
+  seed: function(seed) {
+    this._s0 = ((seed||new Date().getTime()) >>> 0) * this._frac;
+    this._s1 = (seed = (seed*69069 + 1) >>> 0) * this._frac;
+    this._s2 = (seed = (seed*69069 + 1) >>> 0) * this._frac;
+    this._c = 1;
+    return this;
+  },
+  random: function() {
+    var t = 2091639 * this._s0 + this._c * this._frac;
+    this._s0 = this._s1;
+    this._s1 = this._s2;
+    this._c = t | 0;
+    this._s2 = t - this._c;
+    return this._s2;
+  },
+  getNormal: function(mean, stddev) {
+    do {
+      var u = 2*this.random()-1;
+      var v = 2*this.random()-1;
+      var r = u*u + v*v;
+    } while (r > 1 || r == 0);
+    var gauss = u * Math.sqrt(-2*Math.log(r)/r);
+    return (mean || 0) + gauss*(stddev || 1);
+  },
+  getPercentage: function() {
+    return 1 + Math.floor(this.random()*100);
+  },
+  pushState: function() {
+    this._states = (this._states || [] ).push( JSON.stringify( this ) ); 
+    return this;
+  },
+  popState: function(state) {
+    this.merge( JSON.parse( this._states.pop() ) ); //Break on purposes
+    return this;
+  }
+}    
+
+Alea.seed(3717022350)
+random = function(){ return Alea.random() };
 
 //2d map helpers
 map2 = 
 { dump : function()
   {
-    hack = "";
-    this.apply( function(c){ if(c.dump)hack = hack + c.dump(c); });
-    console.log( hack );
+    console.log( this.toString() );
   },
+  toString : function()
+  {
+    hack = "";
+    this.apply( function(c)
+    { 
+      if(c.dump)hack += c.dump(c);else if(c.value)hack += (c.value + (c.eol&&!c.eoc?"\n":"")) 
+    });
+    return hack;    
+  },              
   apply : function( f )
   {
     for( var y = 0 ; y < this.map2.y ; y++ )
       for( var x = 0 ; x < this.map2.x ; x++ )
         f( this[x][y] , this );
+  },
+  rotate : function( degrees )
+  {
+    var config = ( !degrees || degrees == 180 ) ? {  x : this.map2.x , y : this.map2.y  }
+                                                : {  x : this.map2.y , y : this.map2.x  }
+    var source = this;    
+    return map2.init( {} , config , function( cell )
+    {
+      var x = cell.x , y = cell.y , eol = cell.eol; eoc = cell.eoc;
+      if( !degrees || degrees == 360 ) 
+        cell.merge( source[x][y] );
+      else if( degrees == 90 )
+        cell.merge( source[y][source.map2.y-1-x] );
+      else if( degrees == 180 )                    
+        cell.merge( source[source.map2.x-1-x][source.map2.y-1-y] );
+      else if( degrees == 270 )                    
+        cell.merge( source[source.map2.x-1-y][x] );
+      cell.x = x; cell.y = y; cell.eol = eol; cell.eoc = eoc;
+    });
   },
   applyArea : function( from , to , f )
   {
@@ -204,6 +212,8 @@ map2 =
     var cell = { x : x , y : y };
     if( x == config.x - 1 )
       cell.eol = true;
+    if( y == config.y - 1 )
+      cell.eoc = true;      
     return cell;    
   },
   neighbours : function( cell , v/*ectors*/, f/*ilter*/ )
@@ -260,6 +270,7 @@ features =
 .addBase( "<" , "r" , "Up stairs" )
 .addBase( "^" , "r" , "Trap" )
 .addBase( ":" , "w" , "Rubble" )
+.addBase( "$" , "g" , "Treasure" )
 .addBase( "%" , "s" , "Vein" )
 .addBase( "`" , "w" , "Portal" )
 .addBase( "1" , "w" , "General store" )
@@ -423,6 +434,9 @@ function dungeonGenerator( config )
 
 }
 
+// | means should mirrored horizontally
+// _ means should be mirrored vertically
+// |_ means should be rotated all 4 ways   
 dungeonGenerator.rooms = {
 
   "9by4"  : [".........",
@@ -433,26 +447,40 @@ dungeonGenerator.rooms = {
                 ".........",    
                 ".........",
                 "........*"].join("\n"),
-  "pyramid"  : ["####.####",
+  "blocked"  : [".........",
+                ".#######.",    
+                " #######.",
+                ".#######.",
+                "*........"].join("\n"),      
+  "shifted"  : ["......*..",
+                "...###...",    
+                "...#.+...",
+                "...###...",
+                "........."].join("\n"),    
+  "pyramid"  : ["###...###",
                 "###...###",    
                 "##.....##",
-                "...#*#..."].join("\n"),    
+                "...#*#..."].join("\n"),   
+  "triangly" : ["####.####",
+                "###...###",    
+                "#....####",
+                "####*####"].join("\n"),     
   "11by3" : ["...........",
              ".....*.....",
              "..........."].join("\n"),    
-  "bullseye" : ["##.......##",
-             ".#.......#.",    
-             ".....*.....",
-             ".#.......#.",
-             "##.......##"].join("\n"),        
   "octagen" : ["####...####",
                "##.......##",    
                ".....*.....",
                "##.......##",
-               "####...####"].join("\n"),                     
+               "####...####"].join("\n"),         
   "wiggle": ["#.#.#.#.#.#",
              ".....*.....",
              "#.#.#.#.#.#"].join("\n"),        
+  "bigwiggle": ["#.#.#.#.#.#",
+                "...........",    
+                ".#.#.*.#.#.",
+                "...........",    
+                "#.#.#.#.#.#"].join("\n"),            
   parse : function()
   { 
     var keys = [];
@@ -460,13 +488,24 @@ dungeonGenerator.rooms = {
     {
       if( this.hasOwnProperty(key) && typeof this[key] != "function" )
       {
-        //console.log( "Parsing: " , key );
+        var a = map2.initFromText( this[key] , "\n" , "");  
+        this[key+"180"] = a.rotate(180).toString();
+        if( a.map2.x == a.map2.y )
+        {                
+          this[key+"90"] = a.rotate(90).toString();          
+          this[key+"270"] = a.rotate(270).toString();
+        }
+      }    
+    }                
+    for( var key in this)
+    {
+      if( this.hasOwnProperty(key) && typeof this[key] != "function" )
+      {
         var o = map2.initFromText( this[key] , "\n" , "");
         var X = o.filter( function(c){return c.value=="*"} ).shift();
         X.value = ".";
         this[key] = o.filter( function(c){ c.dx = c.x - X.x ; c.dy = c.y - X.y ; return true });  
         keys.push(key);    
-        //console.log(keys,key);                                       
       }
     }
     this.keys = keys;                              
@@ -483,7 +522,7 @@ dungeonGenerator.rooms = {
 }.parse();                                      
 console.log( dungeonGenerator.rooms );                                      
                        
-dungeonGenerator( { grid : { w:8 , h:3 } , map : { w:160 , h:25 } } );
-  
+dungeonGenerator( { grid : { w:12 , h:4 } , map : { w:240 , h:32 } } );
+
 </script>
 </html>
